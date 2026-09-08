@@ -46,15 +46,75 @@ function focusSearchBar() {
 	$("#ox_search").focus();
 }
 
-var publicSpreadsheetUrl = "https://docs.google.com/spreadsheets/d/1ZNo8-DPNOycviPd-h8n-SabhqWjJoM8a8MxLlwQ-6lY/edit?usp=sharing";
+var publicSpreadsheetUrl = "https://docs.google.com/spreadsheets/d/1ZNo8-DPNOycviPd-h8n-SabhqWjJoM8a8MxLlwQ-6lY/gviz/tq?tqx=out:json&sheet=OX";
+
+function fetchSheet() {
+	let url = publicSpreadsheetUrl;
+
+	return fetch(url, { cache: "no-cache" })
+		.then(response => {
+			if (!response.ok) {
+				throw new Error("Network response was not ok (" + response.status + ")");
+			}
+			return response.text();
+		})
+		.then(text => {
+			const m = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?/);
+			if (!m) {
+				const firstBrace = text.indexOf('{');
+				const lastBrace = text.lastIndexOf('}');
+				if (firstBrace === -1 || lastBrace === -1) {
+					throw new Error("Unexpected spreadsheet response format (no JSON found)");
+				}
+				m = [null, text.slice(firstBrace, lastBrace + 1)];
+			}
+			const json = JSON.parse(m[1]);
+
+			const colsMeta = json.table && json.table.cols ? json.table.cols : [];
+			const rawRows = (json.table && json.table.rows ? json.table.rows : [])
+				.map(r => (r.c || []).map(c => (c && typeof c.v !== "undefined") ? c.v : ""));
+
+			if (rawRows.length === 0) return [];
+
+			const firstRow = rawRows[0].map(v => String(v || "").trim());
+			const looksLikeHeader = firstRow.some(v => /question|category|answer|result/i.test(v));
+
+			let headers = [];
+			if (looksLikeHeader) {
+				headers = firstRow;
+				const dataRows = rawRows.slice(1);
+				return dataRows.map(r => {
+					const obj = {};
+					headers.forEach((h, i) => { obj[h] = (typeof r[i] !== "undefined") ? r[i] : ""; });
+					return obj;
+				});
+			} else {
+				headers = colsMeta.map(c => (c.label || c.id || "").trim());
+				if (headers.every(h => !h)) headers = colsMeta.map(c => (c.id || "").trim());
+				if (headers.every(h => !h)) headers = colsMeta.map((_, i) => "col" + i);
+
+				return rawRows.map(r => {
+					const obj = {};
+					headers.forEach((h, i) => { obj[h] = (typeof r[i] !== "undefined") ? r[i] : ""; });
+					return obj;
+				});
+			}
+		});
+}
+
 function init() {
     $("[data-toggle=\"tooltip\"]").tooltip().tooltip("hide"); 
 	setEnabled(false);
 	clearSearchBar();
 	
-	Tabletop.init({ key: publicSpreadsheetUrl,
-					callback: showInfo,
-					wanted: [ "OX" ] });
+	fetchSheet("OX")
+		.then(rows => {
+			showInfo(rows);
+		})
+		.catch(err => {
+			console.error("Failed to load spreadsheet:", err);
+			setEnabled(true);
+		});
 }
 
 function reloadData() {
@@ -78,12 +138,24 @@ function addQuestion(question, result) {
 	ox_li.appendTo("#ox_table");
 }
 
-function showInfo(data, tabletop) {
+function showInfo(rows) {
 	var flags = {};
 	
-	const questions = tabletop.sheets("OX").all()
-		.reduce((a, ox) => a.concat({ Category: ox.Category, Question: ox.Question, Result: ox.Result }, { Category: ox.Category, Question: ox.Answer, Result: "O" }), [])
+	const questions = (rows || [])
+		.reduce((a, ox) => {
+
+			const Category = ox.Category || ox.category || ox["Category "] || "";
+			const Question = ox.Question || ox.question || ox["Question "] || "";
+			const Answer = ox.Answer || ox.answer || ox["Answer "] || "";
+			const Result = ox.Result || ox.result || ox["Result "] || "";
+			
+
+			a.push({ Category: Category, Question: Question, Result: Result });
+			a.push({ Category: Category, Question: Answer, Result: "O" });
+			return a;
+		}, [])
 		.filter((e) => {
+			if (!e || !e.Question) return false;
 			if (flags[e.Question]) {
 				return false;
 			}
