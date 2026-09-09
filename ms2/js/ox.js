@@ -146,12 +146,10 @@ function showInfo(rows) {
 
 			const Category = ox.Category || ox.category || ox["Category "] || "";
 			const Question = ox.Question || ox.question || ox["Question "] || "";
-			const Answer = ox.Answer || ox.answer || ox["Answer "] || "";
 			const Result = ox.Result || ox.result || ox["Result "] || "";
 			
 
 			a.push({ Category: Category, Question: Question, Result: Result });
-			a.push({ Category: Category, Question: Answer, Result: "O" });
 			return a;
 		}, [])
 		.filter((e) => {
@@ -164,7 +162,7 @@ function showInfo(rows) {
 			
 			return true;
 		})
-		.sort(sort_by("Category", "Question", "Answer", "Result"));
+		.sort(sort_by("Category", "Question", "Result"));
 	
 	$.each(questions, function(i, ox) {
 		addQuestion(ox.Question, ox.Result === "O");
@@ -184,7 +182,7 @@ function setRefreshButtonTooltip(questions) {
 	}
 	
 	$refreshButton.attr("title", refreshButtonTooltipFormat.format(questions.length, questions.filter(q => q.Result === "O").length, questions.filter(q => q.Result === "X").length))
-				  .tooltip("_fixTitle");
+					  .tooltip("_fixTitle");
 }
 
 $(document).ready(init);
